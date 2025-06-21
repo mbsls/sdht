@@ -4,14 +4,16 @@ import numpy as np
 def transform_data(df, variable_dict):
     for c in df.columns:
         dictionary = variable_dict[c]
-
         try:
-            if dictionary['accumulate'] == 'period_over_period':
+            if dictionary['accumulate'] == 'period-over-period':
                 var = df.loc[:, c]
                 aux = np.ones((len(var),))
                 aux[0] = 100
                 for j in range(1, len(var)):
-                    aux[j] = aux[j-1] * (1+var.iloc[j])
+                    if np.isfinite(var.iloc[j]):
+                        aux[j] = aux[j-1] * (1+var.iloc[j]/100)
+                    else:
+                        aux[j] = aux[j-1]
                 df.loc[:, c] = aux
         except:
             pass
