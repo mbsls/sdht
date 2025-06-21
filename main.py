@@ -74,14 +74,6 @@ except:
         df_aux.name = variable
         df = pd.concat((df, df_aux),axis=1)
 
-df = df.astype(float)
-df = auxfun.transform_data(df, all_variables)
-for variable in var_list:
-    try:
-        df = df.interpolate(all_variables[variable]['interpolate'])
-    except:
-        pass
-
-df.to_csv('a.csv')
-
+sample_start = pd.to_datetime(config['sample_start'])
+df = auxfun.transform_data(df, all_variables, sample_start=sample_start)
 model = VAR(df)

@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
+import datetime
 
-def transform_data(df, variable_dict):
+def transform_data(df, variable_dict,sample_start=None):
     for c in df.columns:
         dictionary = variable_dict[c]
         try:
@@ -30,7 +31,27 @@ def transform_data(df, variable_dict):
                 df.loc[:, c] = df.loc[:, c]-df.loc[:, c].shift(12)
         except:
             pass
+        
 
+        df.loc[:,c] = pd.to_numeric(df.loc[:,c], errors='coerce')
+        try:
+            df.loc[:,c] = df.loc[:,c].interpolate(dictionary['interpolate'])
+        except:
+            pass
+        
+    # last adjustments here..
+    df = df.astype(float)
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+    df = df.asfreq('MS')
+
+    
+    if isinstance(sample_start, datetime.datetime):
+        df = df.loc[df.index >= sample_start]
+    elif (sample_start is not None) & (not isinstance(sample_start, datetime.datetime)):
+        print('Sample start date must be a datetime!')
+        return -1
+    
     return df
 
 def inverse_transform(df, variable_dict):
