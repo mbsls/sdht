@@ -1,0 +1,24 @@
+api_key: <Your API key>
+
+real_time: True
+
+data_series:
+  unemployment:
+    label: 'Unemployment'
+    code: 'UNRATE'
+  cbo_unemployment:
+    label: 'CBO Unemployment'
+    code: 'NROU'
+  core_pce_inf:
+    label: 'Core PCE inflation'
+    code: 'PCEPILFE'
+    transformation: 'yoy-m'
+  core_pce_expenditure:
+    label: 'Core PCE real'
+    code: 'DPCCRAM1M225NBEA'
+    accumulate: 'period-over-period'
+    transformation: 'yoy-m'
+  interest:
+    label: 'FFR'
+    code: 'FEDFUNDS'
+    transformation: None
