@@ -33,6 +33,7 @@ try:
                 # basic scheme... # this is PERIOD OVER PERIOD
                 df_aux = fred.get_series_first_release(all_variables[variable]['code'])
                 df_aux.index = pd.DatetimeIndex(pd.to_datetime(df_aux.index), freq='MS')
+                df_aux.sort_index(ascending=True)
                 df_aux = 100 * (df_aux-df_aux.shift(1))/df_aux.shift(1)
 
                 dates_to_download = fred.get_series_vintage_dates(all_variables[variable]['code'])
@@ -43,42 +44,44 @@ try:
                     df_aux[pd.to_datetime(df_aux2.iloc[-1].date)] = 100 * (df_aux2.iloc[-1].value - df_aux2.iloc[-2].value)/(df_aux2.iloc[-2].value)
 
                 df_aux.index = pd.to_datetime(df_aux.index)
+                df_aux.sort_index(ascending=True)
                 try:
                     df_aux.index = pd.DatetimeIndex(df_aux.index, freq='MS')
                 except:
-                    df_aux.index = pd.DatetimeIndex(df_aux.index) + pd.DateOffset(months=1)
+                    df_aux.index = pd.DatetimeIndex(df_aux.index)# + pd.DateOffset(months=1)
+                df_aux.sort_index(ascending=True)
                 df_aux.name = variable
                 df = pd.concat((df, df_aux),axis=1)
 
             except:
-                for variable in var_list:
-                    print('Now downloading variable: ' + variable)
-                    df_aux = fred.get_series_first_release(all_variables[variable]['code'])
-                    df_aux.index = pd.to_datetime(df_aux.index)
-                    try:
-                        df_aux.index = pd.DatetimeIndex(df_aux.index, freq='MS')
-                    except:
-                        df_aux.index = pd.DatetimeIndex(df_aux.index) + pd.DateOffset(months=1)
-                    df_aux.name = variable
-                    df = pd.concat((df, df_aux),axis=1)
+                print('Now downloading variable: ' + variable)
+                df_aux = fred.get_series_first_release(all_variables[variable]['code'])
+                df_aux.index = pd.to_datetime(df_aux.index)
+                df_aux.sort_index(ascending=True)
+                try:
+                    df_aux.index = pd.DatetimeIndex(df_aux.index, freq='MS')
+                except:
+                    df_aux.index = pd.DatetimeIndex(df_aux.index)# + pd.DateOffset(months=1)
+                df_aux.sort_index(ascending=True) # Just making sure
+                df_aux.name = variable
+                df = pd.concat((df, df_aux),axis=1)
 except:
     for variables in var_list:
         df_aux = fred.get_series(all_variables[variable]['code'])
         df_aux.index = pd.to_datetime(df_aux.index)
+        df_aux.sort_index(ascending=True)
         df_aux.index = pd.DatetimeIndex(df_aux.index, freq='MS')
         df_aux.name = variable
         df = pd.concat((df, df_aux),axis=1)
 
 df = df.astype(float)
-# df = auxfun.transform_data(df, all_variables)
-
-# for variable in var_list:
-#     try:
-#         df = df.interpolate(all_variables[variable]['interpolate'])
-#     except:
-#         pass
+df = auxfun.transform_data(df, all_variables)
+for variable in var_list:
+    try:
+        df = df.interpolate(all_variables[variable]['interpolate'])
+    except:
+        pass
 
 df.to_csv('a.csv')
 
-df_y = df.loc[:, ['unemployment', 'core_pce_inf', 'core_pce_real', 'interest']]
 model = VAR(df)

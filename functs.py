@@ -26,6 +26,8 @@ def transform_data(df, variable_dict):
                 df.loc[:, c] = 100 * (df.loc[:, c]-df.loc[:, c].shift(12))/df.loc[:, c].shift(12)
             elif dictionary['transformation'] == 'yoy-q':
                 df.loc[:, c] = 100 * (df.loc[:, c]-df.loc[:, c].shift(4))/df.loc[:, c].shift(4)
+            elif dictionary['transformation'] == 'd12':
+                df.loc[:, c] = df.loc[:, c]-df.loc[:, c].shift(12)
         except:
             pass
 
