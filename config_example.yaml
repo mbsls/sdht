@@ -1,8 +1,16 @@
-api_key: <Your API key>
-
+api_key: '<API key here>'
 real_time: True
 
+sample_start: '01-01-1990'
+name_convention: 'tag'
+store_vintage: True
+
 data_series:
+  consumer_sentiment:
+    label: 'Consumer sentiment UM'
+    code: 'UMCSENT'
+    transformation: 'd12'
+    interpolate: 'linear'
   core_pce_inf:
     label: 'Core PCE inflation'
     code: 'PCEPILFE'
