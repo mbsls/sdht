@@ -1,2 +1,4 @@
 a.csv
 config.yaml
+__pycache__
+__pycache__/functs.cpython-312.pyc
