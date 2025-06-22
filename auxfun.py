@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import datetime
 
-def transform_data(df, variable_dict,sample_start=None):
+def transform_data(df, variable_dict,sample_start=None, sample_end=None):
     for c in df.columns:
         dictionary = variable_dict[c]
         try:
@@ -50,6 +50,13 @@ def transform_data(df, variable_dict,sample_start=None):
         df = df.loc[df.index >= sample_start]
     elif (sample_start is not None) & (not isinstance(sample_start, datetime.datetime)):
         print('Sample start date must be a datetime!')
+        return -1
+    
+    
+    if isinstance(sample_end, datetime.datetime):
+        df = df.loc[df.index <= sample_end]
+    elif (sample_end is not None) & (not isinstance(sample_end, datetime.datetime)):
+        print('Sample end date must be a datetime!')
         return -1
     
     return df
