@@ -76,6 +76,54 @@ class STVAR:
     def _logistic(z_std, gamma, c):
         return 1.0 / (1.0 + np.exp(-gamma * (z_std - c)))
 
+    def _effective_AR(self, B, G, n, p):
+        """Effective AR matrices A_1..A_p at frozen weight G.
+
+        With W = [1, y_{t-1}, ..., y_{t-p}], the coefficient block acting on
+        W during forecasting is C = B[:k] + G * B[k:2k] (shape (k, n)).
+        A_j[i, l] = C[1 + (j-1)*n + l, i].
+        """
+        k = 1 + n * p
+        C = B[:k] + G * B[k:2 * k]            # (k, n)
+        return [C[1 + (j - 1) * n: 1 + j * n, :].T for j in range(1, p + 1)]
+
+    @staticmethod
+    def _spectral_radius(AR_list, n, p):
+        comp = np.zeros((n * p, n * p))
+        comp[:n, :] = np.hstack(AR_list)
+        if p > 1:
+            comp[n:, : n * (p - 1)] = np.eye(n * (p - 1))
+        eig = np.linalg.eigvals(comp)
+        return float(np.max(np.abs(eig)))
+
+    def _stabilize(self, B, G, n, p, target=0.98):
+        """Shrink the high-stress block toward the low-stress block until the
+        effective companion at weight G is stationary.
+
+        Returns (B_adjusted, shrink_lambda, spectral_radius_after). The low
+        block is left intact (it is the calm-regime dynamics, estimated off
+        plenty of data and reliably stationary); only the data-poor high
+        block is shrunk by lambda in [0, 1].
+        """
+        k = 1 + n * p
+        rho0 = self._spectral_radius(self._effective_AR(B, G, n, p), n, p)
+        if rho0 <= target or G <= 1e-8:
+            return B, 1.0, rho0
+        lo, hi = 0.0, 1.0
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            B_try = B.copy()
+            B_try[k:2 * k] = mid * B[k:2 * k]
+            rho = self._spectral_radius(self._effective_AR(B_try, G, n, p), n, p)
+            if rho <= target:
+                lo = mid
+            else:
+                hi = mid
+        B_adj = B.copy()
+        B_adj[k:2 * k] = lo * B[k:2 * k]
+        rho_final = self._spectral_radius(self._effective_AR(B_adj, G, n, p), n, p)
+        return B_adj, lo, rho_final
+
     def _build(self, Y, z_std, dummy):
         """Stack regressors for t = p..T-1.
 
@@ -112,35 +160,71 @@ class STVAR:
 
         W, tgt, gz, dd = self._build(Y, z_std, dummy)
         scale = tgt.std(axis=0); scale[scale == 0] = 1.0
+        k = W.shape[1]
+        n = len(endog)
 
-        best = None
+        # Fit every (gamma, c) candidate, recording SSR.
+        candidates = []
         for gamma in self.gamma_grid:
             for c in self.c_grid:
                 G = self._logistic(gz, gamma, c)[:, None]
                 R = np.hstack([W, G * W, dd[:, None]])
                 try:
-                    B, *_ = np.linalg.lstsq(R, tgt, rcond=None)
+                    Bfull, *_ = np.linalg.lstsq(R, tgt, rcond=None)
                 except np.linalg.LinAlgError:
                     continue
-                resid = tgt - R @ B
+                resid = tgt - R @ Bfull
                 ssr = float(np.sum((resid / scale) ** 2))
-                if best is None or ssr < best[0]:
-                    best = (ssr, gamma, c, B)
-        if best is None:
+                candidates.append((ssr, gamma, c, Bfull))
+        if not candidates:
             raise RuntimeError("STVAR grid search failed.")
-        _, self.gamma_, self.c_, Bfull = best
-        k = W.shape[1]
-        self.B_ = Bfull[:2 * k]          # AR + interaction blocks
-        self.delta_ = Bfull[2 * k]       # COVID dummy row
-        self.fitted_lags = self.lags
+        candidates.sort(key=lambda t: t[0])
 
-        # frozen regime weight at the origin (last observed z)
         z_origin_std = (z_raw[-1] - self.z_mean_) / self.z_std_
-        self.G_origin_ = float(self._logistic(np.array([z_origin_std]), self.gamma_, self.c_)[0])
+        last_obs = Y[-self.lags:]
+        last_date = clean.index[-1]
+        freq = pd.infer_freq(clean.index) or "MS"
+        ffr_idx = endog.index("ffr") if "ffr" in endog else None
+        check_h = 12
 
-        self._last_obs = Y[-self.lags:]
-        self._last_date = clean.index[-1]
-        self._freq = pd.infer_freq(clean.index) or "MS"
+        # Walk candidates from lowest SSR; accept the first that satisfies BOTH
+        # hard requirements: (i) the effective companion at G_origin is
+        # stationary (spectral radius < 1) AFTER the high-block shrinkage, and
+        # (ii) the resulting forecast keeps FFR >= 0 over the check horizon.
+        # The stabilizer only shrinks the high block, so a candidate whose
+        # LOW block is itself explosive cannot be rescued -- it is rejected
+        # here. If no candidate qualifies, raise so the harness marks the
+        # origin ok=False.
+        chosen = None
+        for ssr, gamma, c, Bfull in candidates:
+            B = Bfull[:2 * k]
+            G_origin = float(self._logistic(np.array([z_origin_std]), gamma, c)[0])
+            B_adj, lam, rho = self._stabilize(B, G_origin, n, self.lags, target=0.98)
+            if rho >= 1.0:
+                continue                      # low block explosive; unrescuable
+            # provisional state for a forecast probe
+            self.endog_vars = endog; self.fitted_lags = self.lags
+            self.B_ = B_adj; self.G_origin_ = G_origin
+            self._last_obs = last_obs; self._last_date = last_date; self._freq = freq
+            fpath = self.forecast(check_h)
+            if ffr_idx is not None and (fpath["ffr"].values < 0).any():
+                continue
+            chosen = (ssr, gamma, c, Bfull, B_adj, lam, rho, G_origin)
+            break
+
+        if chosen is None:
+            raise ValueError(
+                "No (gamma, c) combination is both stationary and keeps "
+                "FFR >= 0 over the forecast horizon at this origin."
+            )
+
+        _, self.gamma_, self.c_, Bfull, self.B_, self.shrink_lambda_, \
+            self.spectral_radius_, self.G_origin_ = chosen
+        self.delta_ = Bfull[2 * k]
+        self.fitted_lags = self.lags
+        self._last_obs = last_obs
+        self._last_date = last_date
+        self._freq = freq
         return self
 
     def forecast(self, steps: int) -> pd.DataFrame:
