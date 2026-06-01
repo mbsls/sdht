@@ -1,0 +1,130 @@
+# US production data spec for the soft-vs-hard paper.
+#
+# The api_key is NOT in this file; it is resolved by load_config.py from the
+# FRED_API_KEY env var or a sibling `config.yaml` (gitignored).
+#
+# Dual-window design (see project memory `project-soft-vs-hard`):
+#   Long window  (1998+):  hard + soft_long (UMCSENT only)
+#   Short window (2016+):  hard + soft_long + soft_short (full soft block)
+#
+# The `group` field on each series is for analysis-side filtering; the
+# downloader ignores it.
+
+real_time: True
+store_vintage: True
+target_frequency: MS
+sample_start: '01-01-1990'
+name_convention: tag
+output_dir: data/vintages
+cube_dir: data/vintages/cubes
+rebuild_cubes: False        # set True to force re-download of all vintage cubes
+# snapshot_date: '2024-07-01'  # uncomment to freeze the "latest snapshot" date
+
+data_series:
+
+  # ---- hard data ---------------------------------------------------------
+
+  gdp_real:
+    label: 'Real GDP'
+    code: GDPC1
+    group: hard
+    transformation: yoy-q
+    vintage_tracked: True
+  industrial_production:
+    label: 'Industrial Production'
+    code: INDPRO
+    group: hard
+    transformation: yoy-m
+    vintage_tracked: True
+  unemployment:
+    label: 'Unemployment Rate'
+    code: UNRATE
+    group: hard
+    transformation: linear
+    vintage_tracked: True
+  payrolls:
+    label: 'Nonfarm Payrolls'
+    code: PAYEMS
+    group: hard
+    transformation: yoy-m
+    vintage_tracked: True
+  cpi:
+    label: 'CPI Inflation'
+    code: CPIAUCSL
+    group: hard
+    transformation: yoy-m
+    vintage_tracked: True
+  core_pce:
+    label: 'Core PCE Inflation'
+    code: PCEPILFE
+    group: hard
+    transformation: yoy-m
+    vintage_tracked: True
+  ffr:
+    label: 'Federal Funds Rate'
+    code: FEDFUNDS
+    group: hard
+    transformation: linear
+  gs10:
+    label: '10-Year Treasury Yield'
+    code: GS10
+    group: hard
+    transformation: linear
+  tb3m:
+    label: '3-Month T-Bill'
+    code: TB3MS
+    group: hard
+    transformation: linear
+
+  # ---- soft data: long window (UMCSENT vintages from 1998) --------------
+
+  consumer_sentiment:
+    label: 'Michigan Consumer Sentiment'
+    code: UMCSENT
+    group: soft_long
+    transformation: linear
+    vintage_tracked: True       # Michigan revises preliminary -> final each month
+
+  # ---- soft data: short window only (vintages start 2013-2016) ----------
+
+  epu:
+    label: 'BBD Economic Policy Uncertainty (monthly)'
+    code: USEPUINDXM
+    group: soft_short
+    transformation: log         # heavy right tail
+  empire_state_mfg:
+    label: 'Empire State Mfg General Business Conditions'
+    code: GACDISA066MSFRBNY
+    group: soft_short
+    transformation: linear
+  philly_fed_mfg:
+    label: 'Philly Fed Mfg General Activity'
+    code: GACDFSA066MSFRBPHI
+    group: soft_short
+    transformation: linear
+  dallas_fed_mfg:
+    label: 'Dallas Fed Mfg Business Activity'
+    code: BACTSAMFRBDAL
+    group: soft_short
+    transformation: linear
+  sloos_ci_tightening:
+    label: 'Senior Loan Officer Survey: net %% banks tightening C&I (large/medium)'
+    code: DRTSCILM
+    group: soft_short
+    transformation: linear      # native quarterly; will reindex with NaNs at monthly
+
+  # ---- regime / threshold variables -------------------------------------
+
+  vix:
+    label: 'CBOE VIX'
+    code: VIXCLS
+    group: regime
+    transformation: linear
+    aggregation: mean           # daily -> monthly mean
+  nfci:
+    label: 'Chicago Fed NFCI'
+    code: NFCI
+    group: regime
+    transformation: linear
+    aggregation: mean           # weekly -> monthly mean
+    real_time: False            # constructed retrospectively in 2011; first-release call hits FRED's response cap

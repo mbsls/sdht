@@ -3,3 +3,8 @@ config.yaml
 __pycache__
 __pycache__/functs.cpython-312.pyc
 config_example.yaml
+paper/
+
+# Regenerable data artifacts and figures (rebuild from FRED + scripts)
+data/
+figs/
