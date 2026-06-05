@@ -49,13 +49,18 @@ class STVAR:
         self,
         lags: int = 4,
         transition_var: str = "vix",
-        covid_window: tuple[str, str] = ("2020-03-01", "2021-06-01"),
+        covid_window: Optional[tuple[str, str]] = ("2020-03-01", "2021-06-01"),
         gamma_grid: Optional[list[float]] = None,
         c_grid: Optional[list[float]] = None,
     ):
         self.lags = lags
         self.transition_var = transition_var
-        self.covid_window = (pd.Timestamp(covid_window[0]), pd.Timestamp(covid_window[1]))
+        # covid_window=None disables the COVID intercept dummy entirely, so the
+        # high-stress regime must absorb 2020 as well as 2008 (robustness test).
+        self.covid_window = (
+            None if covid_window is None
+            else (pd.Timestamp(covid_window[0]), pd.Timestamp(covid_window[1]))
+        )
         self.gamma_grid = gamma_grid if gamma_grid is not None else [1.0, 2.0, 4.0, 7.0, 12.0]
         self.c_grid = c_grid if c_grid is not None else [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
         # filled by fit
@@ -155,20 +160,28 @@ class STVAR:
         self.z_mean_ = float(z_raw.mean()); self.z_std_ = float(z_raw.std()) or 1.0
         z_std = (z_raw - self.z_mean_) / self.z_std_
 
-        dummy = ((clean.index >= self.covid_window[0]) &
-                 (clean.index <= self.covid_window[1])).astype(float)
+        if self.covid_window is None:
+            dummy = np.zeros(len(clean))
+            use_dummy = False
+        else:
+            dummy = ((clean.index >= self.covid_window[0]) &
+                     (clean.index <= self.covid_window[1])).astype(float)
+            use_dummy = True
 
         W, tgt, gz, dd = self._build(Y, z_std, dummy)
         scale = tgt.std(axis=0); scale[scale == 0] = 1.0
         k = W.shape[1]
         n = len(endog)
 
-        # Fit every (gamma, c) candidate, recording SSR.
+        # Fit every (gamma, c) candidate, recording SSR. The COVID dummy column
+        # is included only when covid_window is set; without it the high-stress
+        # regime must explain 2020 through G(.) alone.
         candidates = []
         for gamma in self.gamma_grid:
             for c in self.c_grid:
                 G = self._logistic(gz, gamma, c)[:, None]
-                R = np.hstack([W, G * W, dd[:, None]])
+                blocks = [W, G * W] + ([dd[:, None]] if use_dummy else [])
+                R = np.hstack(blocks)
                 try:
                     Bfull, *_ = np.linalg.lstsq(R, tgt, rcond=None)
                 except np.linalg.LinAlgError:
@@ -220,7 +233,7 @@ class STVAR:
 
         _, self.gamma_, self.c_, Bfull, self.B_, self.shrink_lambda_, \
             self.spectral_radius_, self.G_origin_ = chosen
-        self.delta_ = Bfull[2 * k]
+        self.delta_ = Bfull[2 * k] if use_dummy else None
         self.fitted_lags = self.lags
         self._last_obs = last_obs
         self._last_date = last_date
